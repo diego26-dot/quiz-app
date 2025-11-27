@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Quiz Cálculo — Procedural</title>
+<style>
+  body{font-family:Arial,Helvetica,sans-serif;background:#f3f6fb;margin:0;color:#0b1220}
+  header{background:#0b5ed7;color:white;padding:18px;text-align:center}
+  .wrap{max-width:900px;margin:18px auto;padding:12px}
+  .card{background:white;border-radius:10px;padding:14px;margin-bottom:12px;box-shadow:0 8px 24px rgba(2,6,23,0.06)}
+  h1,h2{margin:6px 0}
+  .row{display:flex;gap:8px;flex-wrap:wrap}
+  button{background:#0b5ed7;color:white;border:none;padding:10px 14px;border-radius:8px;cursor:pointer}
+  button.ghost{background:transparent;border:1px solid #dbe7ff;color:#234e9f}
+  input,select,textarea{width:100%;padding:10px;border-radius:8px;border:1px solid #e6eef6;margin-top:8px;box-sizing:border-box}
+  .small{font-size:13px;color:#5b6776;margin-top:8px}
+  pre{white-space:pre-wrap}
+  .hidden{display:none}
+  label{font-weight:600;margin-top:10px;display:block}
+</style>
+</head>
+<body>
+<header><h1>Quiz Cálculo — Procedural</h1><div class="small">Perguntas geradas dinamicamente; respostas numéricas com tolerância 0.01</div></header>
+<div class="wrap">
+
+  <!-- MAIN -->
+  <div id="menu" class="card">
+    <h2>Menu</h2>
+    <div class="row">
+      <button id="btnSolo">Modo Solo</button>
+      <button id="btnMulti" class="ghost">Multiplayer (mesmo dispositivo)</button>
+      <button id="btnRank" class="ghost">Ranking</button>
+      <button id="btnReset" class="ghost">Resetar progresso salvo</button>
+    </div>
+    <label>Escolha tema</label>
+    <select id="themeSelect"></select>
+    <div class="small">Temas embutidos: História, Geografia, Ciências, Tecnologia, Esportes, Curiosidades.</div>
+  </div>
+
+  <!-- SOLO -->
+  <div id="soloCard" class="card hidden">
+    <h2>Modo Solo</h2>
+    <label>Seu nome (para ranking)</label><input id="soloName" placeholder="Ex: user1">
+    <label>Dificuldade</label><select id="soloDiff"><option>Fácil</option><option>Médio</option><option>Difícil</option></select>
+    <label>Quantidade (mínimo 3)</label><input id="soloQty" type="number" min="1" value="3">
+    <div class="row" style="margin-top:12px">
+      <button id="startSolo">Iniciar</button>
+      <button id="backFromSolo" class="ghost">Voltar</button>
+    </div>
+    <div class="small">Regra: se a pergunta usa dois fatos, nenhum número aparece; se usa um fato, pode aparecer 1 número aleatório.</div>
+  </div>
+
+  <!-- MULTI -->
+  <div id="multiCard" class="card hidden">
+    <h2>Multiplayer (mesmo dispositivo)</h2>
+    <label>Jogador 1</label><input id="mp1" placeholder="Jogador 1">
+    <label>Jogador 2</label><input id="mp2" placeholder="Jogador 2">
+    <label>Dificuldade (toda a partida)</label><select id="mpDiff"><option>Fácil</option><option>Médio</option><option>Difícil</option></select>
+    <div class="small">Cada jogador responde 8 perguntas (total 16). As perguntas são geradas na hora.</div>
+    <div class="row" style="margin-top:12px">
+      <button id="startMulti">Iniciar Multiplayer</button>
+      <button id="backFromMulti" class="ghost">Voltar</button>
+    </div>
+  </div>
+
+  <!-- QUESTION -->
+  <div id="questionCard" class="card hidden">
+    <h2 id="qTitle"></h2>
+    <pre id="qText" style="font-size:18px"></pre>
+    <label>Resposta (numérica)</label>
+    <input id="qInput" placeholder="Ex: 42 ou 3.14">
+    <div class="row" style="margin-top:10px">
+      <button id="submitBtn">Enviar</button>
+      <button id="saveBtn" class="ghost">Salvar & Sair</button>
+    </div>
+    <div class="small" id="progressText"></div>
+  </div>
+
+  <!-- RESULT -->
+  <div id="resultCard" class="card hidden">
+    <h2>Resultado</h2>
+    <div id="resultText" class="small"></div>
+    <div class="row" style="margin-top:12px">
+      <button id="backToMenu" class="ghost">Voltar ao Menu</button>
+    </div>
+  </div>
+
+  <!-- RANK -->
+  <div id="rankCard" class="card hidden">
+    <h2>Ranking (local)</h2>
+    <div id="rankList" class="small"></div>
+    <div class="row" style="margin-top:12px">
+      <button id="clearRank" class="ghost">Limpar ranking</button>
+      <button id="backFromRank" class="ghost">Voltar</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* ---------------------------
+   FACTS (internal numbers) — used only to calculate answers
+   --------------------------- */
+const FACTS = {
+  guerraFriaFim: 1991,
+  ditaduraFim: 1985,
+  independencia: 1822,
+  segundaGuerraFim: 1945,
+  planetas: 8,
+  cromossomos: 46,
+  continentes: 7,
+  estados: 26,
+  americaSul: 12
+};
+
+/* ---------------------------
+   THEMES: depends on generator templates (no literal factual numbers shown)
+   For procedural mode, we define templates (textual) and generator will create question objects.
+   --------------------------- */
+const THEME_KEYS = [
+  "História",
+  "Geografia",
+  "Ciências",
+  "Tecnologia",
+  "Esportes",
+  "Curiosidades"
+];
+
+/* ---------- DOM refs ---------- */
+const themeSelect = document.getElementById('themeSelect');
+const menu = document.getElementById('menu');
+const soloCard = document.getElementById('soloCard');
+const multiCard = document.getElementById('multiCard');
+const questionCard = document.getElementById('questionCard');
+const resultCard = document.getElementById('resultCard');
+const rankCard = document.getElementById('rankCard');
+
+/* ---------- UI wiring ---------- */
+document.getElementById('btnSolo').addEventListener('click', ()=>{ showCard('solo'); });
+document.getElementById('btnMulti').addEventListener('click', ()=>{ showCard('multi'); });
+document.getElementById('btnRank').addEventListener('click', showRank);
+document.getElementById('btnReset').addEventListener('click', ()=>{
+  if(confirm('Remover progresso salvo e ranking local?')){ localStorage.removeItem('qc_save'); localStorage.removeItem('qc_rank'); alert('Resetado'); location.reload(); }
+});
+
+document.getElementById('backFromSolo').addEventListener('click', showMain);
+document.getElementById('backFromMulti').addEventListener('click', showMain);
+document.getElementById('backToMenu').addEventListener('click', showMain);
+document.getElementById('backFromRank').addEventListener('click', showMain);
+
+document.getElementById('startSolo').addEventListener('click', startSolo);
+document.getElementById('startMulti').addEventListener('click', startMulti);
+
+document.getElementById('submitBtn').addEventListener('click', submitAnswer);
+document.getElementById('saveBtn').addEventListener('click', saveProgress);
+document.getElementById('clearRank').addEventListener('click', ()=>{
+  if(confirm('Limpar ranking local?')){ localStorage.removeItem('qc_rank'); showRank(); }
+});
+
+/* ---------- Simple UI helpers ---------- */
+function showMain(){ hideAll(); menu.classList.remove('hidden'); }
+function showCard(name){
+  hideAll();
+  if(name==='solo') soloCard.classList.remove('hidden');
+  else if(name==='multi') multiCard.classList.remove('hidden');
+}
+function hideAll(){ [menu, soloCard, multiCard, questionCard, resultCard, rankCard].forEach(el=>el.classList.add('hidden')); }
+
+/* ---------- Populate theme select ---------- */
+function populateThemes(){
+  themeSelect.innerHTML = '';
+  for(const t of THEME_KEYS){
+    const o = document.createElement('option'); o.value = t; o.textContent = t; themeSelect.appendChild(o);
+  }
+}
+populateThemes();
+
+/* ---------- Utility ---------- */
+function rnd(min,max,dec=false){
+  const v = Math.random()*(max-min)+min;
+  return dec ? Math.round(v*100)/100 : Math.floor(v);
+}
+function fmt(n){ if(n===null || n===undefined) return ''; if(Number.isInteger(n)) return String(n); return Number(n).toFixed(2); }
+function isClose(a,b,tol=0.01){ return typeof a==='number' && typeof b==='number' && Math.abs(a-b) <= tol; }
+
+/* ---------- Procedural generator rules ----------
+   We create functions that generate a question object { text, answer, difficulty, factsUsed }
+   Rules:
+    - Easy: single-fact templates or simple small arithmetic with one fact + random number (display shows the random number).
+    - Medium: combine two different facts (no numeric literal in text). e.g. "Ano que acabou a Guerra Fria ÷ número de continentes"
+    - Hard: combine facts with sqrt or power; may combine two facts or one fact+small random number; avoid showing real facts in text.
+*/
+
+/* pick random key from FACTS names (human-text) */
+const FACT_KEYS = [
+  {key:'Ano que acabou a Guerra Fria', id:'guerraFriaFim'},
+  {key:'Ano que acabou a Ditadura Militar', id:'ditaduraFim'},
+  {key:'Ano da independência', id:'independencia'},
+  {key:'Ano que terminou a Segunda Guerra', id:'segundaGuerraFim'},
+  {key:'número de planetas', id:'planetas'},
+  {key:'número de cromossomos humanos', id:'cromossomos'},
+  {key:'número de continentes', id:'continentes'},
+  {key:'número de estados', id:'estados'},
+  {key:'Número de países da América do Sul', id:'americaSul'}
+];
+
+function pickFact(){
+  return FACT_KEYS[Math.floor(Math.random()*FACT_KEYS.length)];
+}
+
+/* Generate easy question (single fact + random constant) */
+function genEasy(theme){
+  // choose a fact relevant to theme (approx). We'll bias selection by theme to make it sensible.
+  const themeBias = {
+    'História': ['guerraFriaFim','ditaduraFim','independencia','segundaGuerraFim'],
+    'Geografia': ['continentes','estados','americaSul'],
+    'Ciências': ['planetas','cromossomos'],
+    'Tecnologia': ['planetas','cromossomos'],
+    'Esportes': ['estados','planetas'],
+    'Curiosidades': ['planetas','cromossomos','continentes']
+  };
+  const pool = themeBias[theme] || Object.keys(FACTS);
+  const fid = pool[Math.floor(Math.random()*pool.length)];
+  // map id -> human key
+  const human = FACT_KEYS.find(f=>f.id===fid).key;
+  // operation choices
+  const ops = [' + ', ' - ', ' × ', ' ÷ '];
+  const op = ops[Math.floor(Math.random()*ops.length)];
+  // generate a random constant (not factual) with decimals possible
+  const num = Math.round((Math.random()*50 + 1) * (Math.random()<0.4?100:1)) / (Math.random()<0.4?100:1); // generate ints mostly but sometimes decimals
+  // ensure for ÷ we avoid zero
+  const displayNum = fmt(num);
+  // construct text: single fact + operator + random number (number visible)
+  const text = `${human}${op}${displayNum}`;
+  // compute answer by substituting fact numeric value internally
+  let val = null;
+  const factVal = FACTS[fid];
+  if(op.trim()==='+') val = factVal + num;
+  if(op.trim()==='-') val = factVal - num;
+  if(op.trim()==='×' || op.trim()== 'x') val = factVal * num;
+  if(op.trim()==='÷') val = num!==0 ? factVal / num : factVal;
+  if(Number.isFinite(val)) val = Math.round(val*100)/100;
+  return {text, answer: val, difficulty:'Fácil'};
+}
+
+/* Generate medium question (combine two facts, no number shown) */
+function genMedium(theme){
+  // pick two distinct facts; try pick relevant ones to theme
+  const themeBias = {
+    'História': ['guerraFriaFim','independencia','segundaGuerraFim','ditaduraFim'],
+    'Geografia': ['continentes','estados','americaSul'],
+    'Ciências': ['planetas','cromossomos'],
+    'Tecnologia': ['planetas','cromossomos'],
+    'Esportes': ['estados','planetas','americaSul'],
+    'Curiosidades': ['planetas','cromossomos','continentes','estados']
+  };
+  const pool = themeBias[theme] || Object.keys(FACTS);
+  let a = pool[Math.floor(Math.random()*pool.length)];
+  let b = pool[Math.floor(Math.random()*pool.length)];
+  let tries = 0;
+  while(b===a && tries<10){ b = pool[Math.floor(Math.random()*pool.length)]; tries++; }
+  // choose operation only + - × ÷ but be careful with division by zero
+  const ops = [' + ', ' - ', ' × ', ' ÷ '];
+  const op = ops[Math.floor(Math.random()*ops.length)];
+  // human names
+  const humanA = FACT_KEYS.find(f=>f.id===a).key;
+  const humanB = FACT_KEYS.find(f=>f.id===b).key;
+  const text = `${humanA}${op}${humanB}`;
+  // compute using internal values
+  const valA = FACTS[a], valB = FACTS[b];
+  let answer = null;
+  if(op.trim()==='+') answer = valA + valB;
+  if(op.trim()==='-') answer = valA - valB;
+  if(op.trim()==='×' || op.trim()== 'x') answer = valA * valB;
+  if(op.trim()==='÷') answer = valB !== 0 ? valA / valB : null;
+  if(answer !== null) answer = Math.round(answer*100)/100;
+  return {text, answer, difficulty:'Médio'};
+}
+
+/* Generate hard question (sqrt/pow/combined). May use two facts and may include one random constant if needed, but avoid showing facts as numbers. For two facts, no numeric literals appear in the text. */
+function genHard(theme){
+  // mixture: either pow-based or sqrt-based or nested
+  const mode = Math.random();
+  if(mode < 0.4){
+    // power combo with one fact possibly and an offset constant (if single fact), but we will prefer two facts without numbers
+    // pick two distinct facts
+    const pool = Object.keys(FACTS);
+    let a = pool[Math.floor(Math.random()*pool.length)];
+    let b = pool[Math.floor(Math.random()*pool.length)];
+    let tries = 0;
+    while(b===a && tries<10){ b = pool[Math.floor(Math.random()*pool.length)]; tries++; }
+    const humanA = FACT_KEYS.find(f=>f.id===a).key;
+    const humanB = FACT_KEYS.find(f=>f.id===b).key;
+    // e.g. "Raiz(A) + B^2" -> display uses textual names (no numbers)
+    const text = `Raiz(${humanA}) + (${humanB}) ao quadrado`;
+    const val = Math.round((Math.sqrt(FACTS[a]) + Math.pow(FACTS[b],2)) * 100) / 100;
+    return {text, answer: val, difficulty:'Difícil'};
+  } else if(mode < 0.8){
+    // sqrt of (fact ± fact) or sqrt(fact) × fact
+    const pool = Object.keys(FACTS);
+    const a = pool[Math.floor(Math.random()*pool.length)];
+    const b = pool[Math.floor(Math.random()*pool.length)];
+    const humanA = FACT_KEYS.find(f=>f.id===a).key;
+    const humanB = FACT_KEYS.find(f=>f.id===b).key;
+    const text = `Raiz(${humanA} - ${humanB}) + número de planetas`;
+    // compute; ensure non-negative inside sqrt by ordering
+    const inside = Math.max(0, FACTS[a] - FACTS[b]);
+    const val = Math.round((Math.sqrt(inside) + FACTS['planetas']) * 100) / 100;
+    return {text, answer: val, difficulty:'Difícil'};
+  } else {
+    // single fact complex: (fact^2) - {NUM} allowed: since single fact, showing a numeric constant is allowed.
+    const pool = Object.keys(FACTS);
+    const a = pool[Math.floor(Math.random()*pool.length)];
+    const humanA = FACT_KEYS.find(f=>f.id===a).key;
+    const rndnum = Math.round((Math.random()*50 + 1) * 100)/100;
+    const text = `${humanA} ao quadrado - ${fmt(rndnum)}`; // because single fact, show number
+    const val = Math.round((Math.pow(FACTS[a],2) - rndnum) * 100) / 100;
+    return {text, answer: val, difficulty:'Difícil'};
+  }
+}
+
+/* Central generator that returns one question given theme and difficulty */
+function generateQuestion(theme, difficulty){
+  if(difficulty==='Fácil') return genEasy(theme);
+  if(difficulty==='Médio' || difficulty==='Medio') return genMedium(theme);
+  return genHard(theme);
+}
+
+/* ---------- Game state ---------- */
+let STATE = null;
+/*
+  For solo:
+   STATE = { mode:'solo', player:'name', questions:[{text,answer,difficulty}], idx:0, points:0 }
+
+  For multi:
+   STATE = { mode:'multi', players:['p1','p2'], questions:[...], idx:0, scores:{p1:0,p2:0}, perPlayer:8 }
+*/
+
+function saveRank(obj){
+  localStorage.setItem('qc_rank', JSON.stringify(obj));
+}
+function loadRank(){
+  try{ return JSON.parse(localStorage.getItem('qc_rank')||'{}'); }catch(e){return{}}
+}
+function saveGame(){
+  localStorage.setItem('qc_save', JSON.stringify(STATE));
+}
+function loadGame(){
+  try{ return JSON.parse(localStorage.getItem('qc_save')||'null'); }catch(e){ return null; }
+}
+
+/* ---------- Solo flow ---------- */
+function startSolo(){
+  const name = document.getElementById('soloName').value.trim() || 'Jogador';
+  let qty = parseInt(document.getElementById('soloQty').value) || 3;
+  if(qty < 3) qty = 3;
+  const diff = document.getElementById('soloDiff').value;
+  const theme = themeSelect.value;
+  const qlist = [];
+  let attempts = 0;
+  while(qlist.length < qty && attempts < qty * 5){
+    const q = generateQuestion(theme, diff);
+    if(q && typeof q.answer === 'number') qlist.push(q);
+    attempts++;
+  }
+  if(qlist.length < qty){ alert('Não foi possível gerar perguntas suficientes — tente outra dificuldade/tema'); return; }
+  STATE = { mode:'solo', player:name, questions:qlist, idx:0, points:0 };
+  saveGame();
+  showQuestion();
+  renderQuestion();
+}
+
+/* ---------- Multiplayer flow ---------- */
+function startMulti(){
+  const p1 = document.getElementById('mp1').value.trim();
+  const p2 = document.getElementById('mp2').value.trim();
+  if(!p1 || !p2){ alert('Digite nomes para os dois jogadores'); return; }
+  const diff = document.getElementById('mpDiff').value;
+  const theme = themeSelect.value;
+  const perPlayer = 8;
+  const total = perPlayer * 2;
+  const qlist = [];
+  let attempts = 0;
+  while(qlist.length < total && attempts < total * 6){
+    const q = generateQuestion(theme, diff);
+    if(q && typeof q.answer === 'number') qlist.push(q);
+    attempts++;
+  }
+  if(qlist.length < total){ alert('Não foi possível gerar perguntas suficientes — tente outro tema'); return; }
+  const scores = {}; scores[p1]=0; scores[p2]=0;
+  STATE = { mode:'multi', players:[p1,p2], questions:qlist, idx:0, scores:scores, perPlayer:perPlayer };
+  saveGame();
+  showQuestion();
+  renderQuestion();
+}
+
+/* ---------- Render question ---------- */
+function showQuestion(){
+  hideAll();
+  questionCard.classList.remove('hidden');
+}
+function renderQuestion(){
+  if(!STATE){ showMain(); return; }
+  const q = STATE.questions[STATE.idx];
+  const header = STATE.mode==='solo'
+    ? `${STATE.player} — Pergunta ${STATE.idx+1}/${STATE.questions.length}`
+    : `${STATE.players[STATE.idx % STATE.players.length]} — Pergunta ${STATE.idx+1}/${STATE.questions.length}`;
+  document.getElementById('qTitle').textContent = header;
+  document.getElementById('qText').textContent = q.text;
+  document.getElementById('qInput').value = '';
+  if(STATE.mode==='solo') document.getElementById('progressText').textContent = `Pontos: ${STATE.points}`;
+  else {
+    const p0 = STATE.players[0], p1 = STATE.players[1];
+    document.getElementById('progressText').textContent = `Placar: ${p0} ${STATE.scores[p0]} — ${p1} ${STATE.scores[p1]}`;
+  }
+}
+
+/* ---------- Submit answer ---------- */
+function submitAnswer(){
+  if(!STATE) return;
+  const raw = document.getElementById('qInput').value.trim();
+  const value = parseFloat(raw);
+  const q = STATE.questions[STATE.idx];
+  const correct = q.answer;
+  const ok = (typeof value==='number' && !isNaN(value) && isClose(value, correct, 0.01));
+  if(STATE.mode==='solo'){
+    const pts = (q.difficulty==='Fácil' || q.difficulty==='Facil') ? 1 : (q.difficulty==='Médio'||q.difficulty==='Medio'?2:3);
+    if(ok){ STATE.points += pts; alert(`Correto! +${pts} pts`); }
+    else alert(`Errado. Resposta correta: ${fmt(correct)}`);
+    STATE.idx++;
+    saveGame();
+    if(STATE.idx >= STATE.questions.length) finishSolo();
+    else renderQuestion();
+  } else {
+    const curIndex = STATE.idx % STATE.players.length;
+    const player = STATE.players[curIndex];
+    const pts = (q.difficulty==='Fácil' || q.difficulty==='Facil') ? 1 : (q.difficulty==='Médio'||q.difficulty==='Medio'?2:3);
+    if(ok){ STATE.scores[player] += pts; alert(`${player} acertou! +${pts} pts`); }
+    else alert(`${player} errou. Resposta correta: ${fmt(correct)}`);
+    STATE.idx++;
+    saveGame();
+    if(STATE.idx >= STATE.questions.length) finishMulti();
+    else renderQuestion();
+  }
+}
+
+/* ---------- Finish solo/multi ---------- */
+function finishSolo(){
+  const name = STATE.player || 'Jogador';
+  const pts = STATE.points || 0;
+  const ranking = loadRank();
+  ranking[name] = (ranking[name]||0) + pts;
+  saveRank(ranking);
+  localStorage.removeItem('qc_save');
+  document.getElementById('resultText').innerHTML = `<strong>Fim!</strong><br>${name} fez ${pts} pontos. (Total atualizado no ranking)`;
+  STATE = null;
+  hideAll(); resultCard.classList.remove('hidden');
+}
+function finishMulti(){
+  const ranking = loadRank();
+  for(const p of STATE.players) ranking[p] = (ranking[p] || 0) + (STATE.scores[p]||0);
+  saveRank(ranking);
+  localStorage.removeItem('qc_save');
+  const p0=STATE.players[0], p1=STATE.players[1];
+  document.getElementById('resultText').innerHTML = `<strong>Fim da partida</strong><br>${p0}: ${STATE.scores[p0]} pts<br>${p1}: ${STATE.scores[p1]} pts`;
+  STATE = null;
+  hideAll(); resultCard.classList.remove('hidden');
+}
+
+/* ---------- Save progress ---------- */
+function saveProgress(){
+  if(!STATE) return alert('Nenhum jogo em andamento');
+  localStorage.setItem('qc_save', JSON.stringify(STATE));
+  alert('Progresso salvo no navegador.');
+  showMain();
+}
+
+/* ---------- Resume progress on load ---------- */
+(function tryResume(){
+  const raw = localStorage.getItem('qc_save');
+  if(!raw) return;
+  try{
+    const parsed = JSON.parse(raw);
+    if(!parsed || !parsed.mode) return;
+    if(confirm('Existe um jogo salvo. Deseja retomar?')){ STATE = parsed; showQuestion(); renderQuestion(); }
+  }catch(e){}
+})();
+
+/* ---------- Ranking UI ---------- */
+function showRank(){
+  hideAll();
+  rankCard.classList.remove('hidden');
+  const r = loadRank();
+  const arr = Object.keys(r).map(k=>({name:k,pts:r[k]})).sort((a,b)=>b.pts - a.pts);
+  if(arr.length===0){ document.getElementById('rankList').innerHTML = '<div class="small">Nenhuma pontuação registrada.</div>'; return; }
+  let html = '<ol>';
+  for(const it of arr) html += `<li><strong>${it.name}</strong>: ${it.pts} pts</li>`;
+  html += '</ol>';
+  document.getElementById('rankList').innerHTML = html;
+}
+
+/* ---------- Helpers ---------- */
+function fmt(n){ if(n===null || n===undefined) return ''; if(Number.isInteger(n)) return String(n); return Number(n).toFixed(2); }
+function isClose(a,b,tol=0.01){ return typeof a==='number' && typeof b==='number' && Math.abs(a-b) <= tol; }
+
+/* ---------- Show main on load ---------- */
+showMain();
+
+/* ---------- Expose some functions for debugging in console (optional) ---------- */
+window._generateQuestion = generateQuestion;
+window._FACTS = FACTS;
+window._STATE = STATE;
+window._saveRank = saveRank;
+window._loadRank = loadRank;
+
+</script>
+</div>
+</body>
+</html>
